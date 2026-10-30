@@ -9,6 +9,8 @@ on:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 concurrency:
   group: tracker
@@ -17,6 +19,8 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
+    outputs:
+      publish: ${{ steps.publish.outputs.publish }}
     env:
       FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
     steps:
@@ -65,8 +69,38 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Decide whether to publish
+        id: publish
+        run: |
+          if [ "${{ steps.commit.outputs.changed }}" = "true" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Stage site
+        if: steps.publish.outputs.publish == 'true'
+        run: |
+          mkdir _site
+          cp report/recession_tracker.html _site/index.html
+
+      - uses: actions/upload-pages-artifact@v3
+        if: steps.publish.outputs.publish == 'true'
+
+  deploy:
+    needs: run
+    if: needs.run.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
       - name: Email the report
-        if: steps.commit.outputs.changed == 'true' || (github.event_name == 'workflow_dispatch' && steps.commit.outcome == 'success')
         uses: dawidd6/action-send-mail@v6
         with:
           server_address: smtp.gmail.com
@@ -77,5 +111,7 @@ jobs:
           subject: Recession tracker updated
           to: willshelley404@gmail.com, will.shelley@avalara.com
           from: Recession Tracker <${{ secrets.MAIL_USERNAME }}>
-          body: The recession tracker log was updated. Report attached; also see ${{ github.server_url }}/${{ github.repository }}/commits/${{ github.ref_name }}.
+          html_body: |
+            <p>The recession tracker was updated.</p>
+            <p><a href="${{ steps.deployment.outputs.page_url }}">Open the interactive report</a></p>
           attachments: report/recession_tracker.html
