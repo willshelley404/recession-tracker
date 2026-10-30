@@ -1,0 +1,5 @@
+.Renviron
+*.Rhistory
+.Rproj.user/
+_freeze/
+*_files/
