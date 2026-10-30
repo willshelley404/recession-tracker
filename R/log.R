@@ -11,17 +11,21 @@ LOG_COLS <- c(
   "train_base_rate", PREDICTORS, "interpolated", "rec_next12_actual"
 )
 
-#' Scored rows (from walk_forward/score_month) → log schema
+#' Scored rows (from walk_forward/score_month) → log schema. Numbers are
+#' rounded to LOG_DIGITS so they survive CSV round trips unchanged (readr
+#' re-reads 17-digit doubles a ulp off, which would rewrite every row).
+LOG_DIGITS <- 6
 as_log_rows <- function(rows, source, run_at) {
+  rows[, PREDICTORS] <- lapply(rows[, PREDICTORS, drop = FALSE], round, LOG_DIGITS)
   out <- data.frame(
     month = rows$month,
-    prob = rows$prob,
+    prob = round(rows$prob, LOG_DIGITS),
     source = rep(source, nrow(rows)),
     model_version = rep(MODEL_VERSION, nrow(rows)),
     run_at = rep(format(run_at, "%Y-%m-%dT%H:%M:%S%z"), nrow(rows)),
     train_end = rows$train_end,
     n_train = as.integer(rows$n_train),
-    train_base_rate = rows$train_base_rate,
+    train_base_rate = round(rows$train_base_rate, LOG_DIGITS),
     rows[, PREDICTORS, drop = FALSE],
     interpolated = rep("", nrow(rows)),
     rec_next12_actual = rep(NA_real_, nrow(rows)),
