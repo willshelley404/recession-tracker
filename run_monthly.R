@@ -15,6 +15,7 @@ setwd(root)
 for (f in sort(list.files("R", pattern = "\\.R$", full.names = TRUE))) source(f)
 
 res <- run_pipeline(rebuild = "--rebuild" %in% args, render = !"--no-render" %in% args)
+if (!"--no-render" %in% args) plot_static()
 r <- latest_reading(res$log)
 cat(sprintf(
   "%s: %d new row(s). Latest %s: %.1f%% (%s)%s\n",

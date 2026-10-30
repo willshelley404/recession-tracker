@@ -60,7 +60,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add log report/recession_tracker.html
+          git add log report/recession_tracker.html report/recession_tracker.png
           if git diff --cached --quiet; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
@@ -114,4 +114,4 @@ jobs:
           html_body: |
             <p>The recession tracker was updated.</p>
             <p><a href="${{ steps.deployment.outputs.page_url }}">Open the interactive report</a></p>
-          attachments: report/recession_tracker.html
+          attachments: report/recession_tracker.png
