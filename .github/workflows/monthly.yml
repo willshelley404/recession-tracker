@@ -1,0 +1,60 @@
+name: Monthly recession tracker
+
+on:
+  schedule:
+    - cron: "0 14 * * *"   # daily 14:00 UTC; the pipeline only appends when a new month exists
+  workflow_dispatch:
+  pull_request:
+    paths: ["R/**", "tests/**", "run_monthly.R", ".github/workflows/**"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: tracker
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    env:
+      FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          packages: |
+            any::fredr
+            any::glmnet
+            any::lubridate
+            any::readr
+            any::plotly
+            any::htmltools
+            any::gt
+            any::zoo
+            any::testthat
+            any::knitr
+            any::rmarkdown
+
+      - uses: quarto-dev/quarto-actions/setup@v2
+
+      - name: Unit tests
+        run: Rscript tests/testthat.R
+
+      - name: Update log and render report
+        if: github.event_name != 'pull_request'
+        run: Rscript run_monthly.R
+
+      - name: Commit updated log and report
+        if: github.event_name != 'pull_request'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add log report/recession_tracker.html
+          git diff --cached --quiet || git commit -m "chore: monthly tracker update"
+          git push
