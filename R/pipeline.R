@@ -18,17 +18,35 @@
 }
 
 run_pipeline <- function(fetch = fetch_fred, rebuild = FALSE, render = TRUE,
-                         log_path = LOG_PATH, usrec_path = USREC_PATH, now = Sys.time()) {
+                         log_path = LOG_PATH, usrec_path = USREC_PATH, now = Sys.time(),
+                         meta_path = file.path(dirname(log_path), "meta.csv")) {
   raw <- fetch()
   panel <- build_panel(raw)
   log <- read_log(log_path)
 
   if (rebuild || log_needs_rebuild(log)) {
-    rows <- walk_forward(panel)
-    new_log <- as_log_rows(rows, "backtest", now)
-    new_log$interpolated <- .interpolated_tags(new_log$month, raw$interpolated)
+    # Same model version: live rows are never rewritten, so only the backtest
+    # before the first live month is regenerated. A version change archives
+    # everything and starts over.
+    same_version <- !is.null(log) && nrow(log) > 0 && !any(log$model_version != MODEL_VERSION)
+    keep_live <- if (same_version && any(log$source == "live")) log[log$source == "live", , drop = FALSE]
+    through <- if (!is.null(keep_live)) min(keep_live$month) %m-% n_months(1)
+    backtest <- as_log_rows(walk_forward(panel, through = through), "backtest", now)
+    backtest$interpolated <- .interpolated_tags(backtest$month, raw$interpolated)
+
+    # A fetch that "succeeds" with missing or truncated series must not
+    # replace good history
+    if (nrow(backtest) == 0) {
+      stop("refusing to rebuild: no month has all six predictors (check the fetched series)", call. = FALSE)
+    }
+    new_end <- max(c(backtest$month, keep_live$month))
+    if (!is.null(log) && nrow(log) > 0 && new_end < max(log$month)) {
+      stop(sprintf("refusing to rebuild: new history ends %s, before the existing log's %s",
+                   format(new_end), format(max(log$month))), call. = FALSE)
+    }
+    new_log <- rbind(backtest, keep_live)
     status <- "rebuilt"
-    n_new <- nrow(new_log)
+    n_new <- nrow(backtest)
   } else {
     pending <- panel$date[panel$complete & panel$date > max(log$month)]
     rows <- do.call(rbind, c(list(.empty_rows()), lapply(pending, function(m) score_month(panel, m))))
@@ -45,6 +63,7 @@ run_pipeline <- function(fetch = fetch_fred, rebuild = FALSE, render = TRUE,
   write_log_atomic(new_log, log_path)
   dir.create(dirname(usrec_path), recursive = TRUE, showWarnings = FALSE)
   readr::write_csv(panel[, c("date", "recession")], usrec_path, na = "NA")
+  write_meta(meta_path, raw$fetched_at, status, n_new)
 
   if (render) {
     code <- system2("quarto", c("render", "report/recession_tracker.qmd"))

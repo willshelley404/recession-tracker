@@ -26,6 +26,7 @@ format:
 params:
   log_path: "../log/predictions.csv"
   usrec_path: "../log/usrec.csv"
+  meta_path: "../log/meta.csv"
 execute:
   echo: true
   warning: false
@@ -43,6 +44,7 @@ SCOPE     Sign-constrained Ridge GLM only (TerraMetric-Atlas "Long-history
           subset" spec). Not TerraMetric-Atlas's blended headline.
 PARAMS    log_path   — prediction log CSV (default ../log/predictions.csv)
           usrec_path — NBER recession indicator CSV (default ../log/usrec.csv)
+          meta_path  — last run's data vintage + status (default ../log/meta.csv)
 RENDER    quarto render report/recession_tracker.qmd   (from the repo root)
 PREREQ    Rscript run_monthly.R   (fetches FRED, updates log/, renders this)
 DEPENDS   R: readr, dplyr, lubridate, plotly, gt, htmltools; the repo's R/ modules.
@@ -53,6 +55,7 @@ DEPENDS   R: readr, dplyr, lubridate, plotly, gt, htmltools; the repo's R/ modul
 #| label: params
 log_path   <- params$log_path
 usrec_path <- params$usrec_path
+meta_path  <- params$meta_path
 ```
 
 ```{r}
@@ -71,6 +74,8 @@ rt <- runup_table(lg, usrec)
 last12 <- lg$prob[lg$month > now$month %m-% n_months(12)]
 spans <- recession_spans(usrec, from = min(lg$month) %m-% n_months(24))
 interp <- unique(lg[nzchar(lg$interpolated), c("month", "interpolated")])
+meta <- read_meta(meta_path)
+history <- model_history(log_path)
 ```
 
 # 1 — Latest reading
@@ -82,6 +87,9 @@ kpi_row(
   kpi_card("Recession probability (12m)", fmt_pct(now$prob), format(now$month, "%B %Y"), PAL$orange),
   kpi_card("Change", fmt_pts(now$change_pts),
            if (is.na(now$prev_month)) NULL else paste("vs", format(now$prev_month, "%B %Y")), chg_col),
+  kpi_card("Data fetched",
+           if (is.null(meta)) "—" else format(meta$fetched_at, "%d %b %Y"),
+           "FRED vintage used for every row", PAL$neutral),
   kpi_card("Last 12 months", paste(fmt_pct(min(last12)), "–", fmt_pct(max(last12))), "range", PAL$navy),
   kpi_card("Logged", sprintf("%d months", nrow(lg)),
            sprintf("%d backtest · %d live", sum(lg$source == "backtest"), sum(lg$source == "live")), PAL$teal)
@@ -177,6 +185,12 @@ callout("logic", "Model",
          "12-month change in consumer sentiment. Each coefficient is constrained to the sign economic ",
          "theory expects. Rolling 360-month window; refit each January on outcomes already known ",
          "(12-month embargo). Version <code>", MODEL_VERSION, "</code>."))
+if (nrow(history)) {
+  callout("note", "Model changes",
+    paste0("History was rebuilt after a model change. Earlier versions are archived in <code>log/archive/</code>: ",
+           paste(sprintf("<code>%s</code> (replaced %s)", history$version, format(history$archived_at, "%d %b %Y")),
+                 collapse = ", "), ". Their live readings are not on this chart."))
+}
 ```
 
 ## 4.2 Backtest performance

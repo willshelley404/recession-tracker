@@ -68,3 +68,29 @@ test_that("version mismatch archives and rebuilds", {
   expect_match(basename(archived), "^old_")
   expect_equal(basename(dirname(archived)), "archive")
 })
+
+test_that("read_log refuses when only the temp file exists", {
+  dir <- withr::local_tempdir()
+  path <- file.path(dir, "predictions.csv")
+  write_log_atomic(as_log_rows(score_rows("2020-01-01"), "backtest", t0), path)
+  file.rename(path, paste0(path, ".tmp")) # as if a write died between steps
+  expect_error(read_log(path), "predictions.csv.tmp")
+})
+
+test_that("write_log_atomic replaces an existing log", {
+  dir <- withr::local_tempdir()
+  path <- file.path(dir, "predictions.csv")
+  write_log_atomic(as_log_rows(score_rows("2020-01-01"), "backtest", t0), path)
+  write_log_atomic(as_log_rows(score_rows(c("2020-01-01", "2020-02-01")), "backtest", t0), path)
+  expect_equal(nrow(read_log(path)), 2)
+})
+
+test_that("model_history lists archived versions", {
+  dir <- withr::local_tempdir()
+  expect_equal(nrow(model_history(file.path(dir, "predictions.csv"))), 0)
+  dir.create(file.path(dir, "archive"))
+  file.create(file.path(dir, "archive", "glm-long-v0_20261101-090000.csv"))
+  h <- model_history(file.path(dir, "predictions.csv"))
+  expect_equal(h$version, "glm-long-v0")
+  expect_equal(format(h$archived_at, "%Y-%m-%d %H:%M"), "2026-11-01 09:00")
+})

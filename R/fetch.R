@@ -15,8 +15,14 @@ require_fred_key <- function() {
 
 #' Fill an NA only when both date-neighbours are present: log-linear for a
 #' strictly positive series, linear otherwise. Longer gaps and edges stay NA.
+#' Reindexed onto the monthly grid first, so an absent row counts as a missing
+#' month (and an absent row next to an NA is a two-month gap).
 interpolate_single_gaps <- function(df) {
   df <- df[order(df$date), , drop = FALSE]
+  if (nrow(df) > 0) {
+    grid <- seq(min(df$date), max(df$date), by = "1 month")
+    df <- data.frame(date = grid, value = df$value[match(grid, df$date)])
+  }
   v <- df$value
   n <- length(v)
   filled <- df$date[0]

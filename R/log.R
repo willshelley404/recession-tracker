@@ -36,6 +36,13 @@ as_log_rows <- function(rows, source, run_at) {
 }
 
 read_log <- function(path = LOG_PATH) {
+  tmp <- paste0(path, ".tmp")
+  if (!file.exists(path) && file.exists(tmp)) {
+    # A write died before its rename. Rebuilding here would silently turn every
+    # live row into a backtest row, so stop and let a person decide.
+    stop("Found ", tmp, " but no ", basename(path), ": a previous write was interrupted. ",
+         "Check the .tmp file and rename it to ", basename(path), " if it is complete.", call. = FALSE)
+  }
   if (!file.exists(path)) return(NULL)
   types <- readr::cols(
     month = readr::col_date(), train_end = readr::col_date(), source = readr::col_character(),
@@ -54,7 +61,8 @@ write_log_atomic <- function(df, path = LOG_PATH) {
   dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
   tmp <- paste0(path, ".tmp")
   readr::write_csv(df[order(df$month), LOG_COLS], tmp, na = "NA")
-  if (file.exists(path)) file.remove(path)
+  # file.rename replaces an existing target (Windows included); removing the
+  # target first would open a window where only the .tmp exists
   if (!file.rename(tmp, path)) stop("Could not move ", tmp, " to ", path)
   invisible(path)
 }
@@ -71,6 +79,34 @@ archive_log <- function(path = LOG_PATH) {
   dest <- file.path(dir, sprintf("%s_%s.csv", ver, format(Sys.time(), "%Y%m%d-%H%M%S")))
   if (!file.rename(path, dest)) stop("Could not archive ", path)
   dest
+}
+
+#' Earlier model versions, from log/archive/<version>_<YYYYmmdd-HHMMSS>.csv
+model_history <- function(path = LOG_PATH) {
+  files <- list.files(file.path(dirname(path), "archive"), pattern = "\\.csv$")
+  m <- regmatches(files, regexec("^(.+)_(\\d{8}-\\d{6})\\.csv$", files))
+  m <- m[lengths(m) == 3]
+  data.frame(
+    version = vapply(m, `[`, "", 2),
+    archived_at = as.POSIXct(vapply(m, `[`, "", 3), format = "%Y%m%d-%H%M%S"),
+    stringsAsFactors = FALSE
+  )
+}
+
+#' Run metadata: when the data were fetched (the vintage) and what the run did.
+#' Written every run, so the vintage is known even when no row was added.
+write_meta <- function(path, fetched_at, status, n_new) {
+  readr::write_csv(data.frame(
+    fetched_at = format(fetched_at, "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
+    status = status, n_new = n_new, model_version = MODEL_VERSION
+  ), path)
+}
+
+read_meta <- function(path) {
+  if (!file.exists(path)) return(NULL)
+  m <- utils::read.csv(path, stringsAsFactors = FALSE)
+  m$fetched_at <- as.POSIXct(m$fetched_at, format = "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
+  as.list(m)
 }
 
 #' Add live rows for months not already logged; existing rows are untouched

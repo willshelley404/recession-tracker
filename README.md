@@ -26,7 +26,7 @@ pointed at it:
 ```bash
 export R_ENVIRON_USER="C:/Users/will.shelley/OneDrive - Avalara/Documents/.Renviron"
 Rscript run_monthly.R             # fetch, append new months, render the report
-Rscript run_monthly.R --rebuild   # archive the log and rebuild history from scratch
+Rscript run_monthly.R --rebuild   # regenerate the backtest (live rows are kept; old log archived)
 Rscript run_monthly.R --no-render # update the log only
 ```
 
@@ -36,6 +36,7 @@ Rscript run_monthly.R --no-render # update the log only
 |---|---|
 | `log/predictions.csv` | One row per month: probability, source (`backtest`/`live`), inputs, outcome once known |
 | `log/usrec.csv` | NBER recession indicator, for shading |
+| `log/meta.csv` | Last run: FRED fetch time (the data vintage), status, rows added |
 | `log/archive/` | Logs from earlier model versions |
 | `report/recession_tracker.html` | The self-contained report |
 

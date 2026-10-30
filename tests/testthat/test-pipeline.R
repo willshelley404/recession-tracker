@@ -75,3 +75,39 @@ test_that("interpolated months are recorded", {
   expect_match(lg$interpolated[lg$month == as.Date("1995-10-01")], "CPIAUCSL")
   expect_match(lg$interpolated[lg$month == as.Date("1996-10-01")], "CPIAUCSL") # via the YoY base month
 })
+
+test_that("rebuild keeps live rows", {
+  dir <- withr::local_tempdir()
+  run_tmp(stub(drop_last(full_raw)), dir)
+  run_tmp(stub(full_raw), dir)
+  before <- read_log(file.path(dir, "predictions.csv"))
+  live_before <- before[before$source == "live", ]
+  res <- run_tmp(stub(full_raw), dir, rebuild = TRUE)
+  after <- read_log(file.path(dir, "predictions.csv"))
+  live_after <- after[after$source == "live", ]
+  expect_equal(res$status, "rebuilt")
+  expect_equal(nrow(live_after), 1)
+  expect_identical(live_after[, setdiff(LOG_COLS, "rec_next12_actual")],
+                   live_before[, setdiff(LOG_COLS, "rec_next12_actual")])
+  expect_equal(anyDuplicated(after$month), 0)
+})
+
+test_that("rebuild from a degraded fetch keeps the old log", {
+  dir <- withr::local_tempdir()
+  run_tmp(stub(drop_last(full_raw)), dir)
+  before <- tools::md5sum(file.path(dir, "predictions.csv"))
+  broken <- full_raw
+  broken$series$UMCSENT <- broken$series$UMCSENT[0, ]
+  expect_error(run_tmp(stub(broken), dir, rebuild = TRUE), "refusing")
+  expect_equal(tools::md5sum(file.path(dir, "predictions.csv")), before)
+  expect_false(dir.exists(file.path(dir, "archive")))
+})
+
+test_that("every run records the data vintage", {
+  dir <- withr::local_tempdir()
+  run_tmp(stub(drop_last(full_raw)), dir)
+  run_tmp(stub(drop_last(full_raw)), dir) # an unchanged run still records it
+  meta <- read_meta(file.path(dir, "meta.csv"))
+  expect_equal(meta$fetched_at, full_raw$fetched_at)
+  expect_equal(meta$status, "unchanged")
+})

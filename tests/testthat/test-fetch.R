@@ -32,3 +32,17 @@ test_that("missing key gives actionable error", {
   Sys.setenv(FRED_API_KEY = "")
   expect_error(require_fred_key(), "R_ENVIRON_USER")
 })
+
+test_that("absent row next to an NA is a two-month gap, not filled", {
+  df <- data.frame(date = as.Date(c("2020-01-01", "2020-03-01", "2020-04-01")), value = c(100, NA, 121))
+  out <- interpolate_single_gaps(df)
+  expect_true(is.na(out$data$value[out$data$date == as.Date("2020-03-01")]))
+  expect_length(out$filled, 0)
+})
+
+test_that("a single absent row is filled on the monthly grid", {
+  df <- data.frame(date = as.Date(c("2020-01-01", "2020-03-01")), value = c(100, 121))
+  out <- interpolate_single_gaps(df)
+  expect_equal(out$data$value[out$data$date == as.Date("2020-02-01")], 110, tolerance = 1e-9)
+  expect_equal(out$filled, as.Date("2020-02-01"))
+})
