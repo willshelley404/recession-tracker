@@ -1,7 +1,8 @@
 score_rows <- function(months, prob = 0.2) {
   data.frame(
     month = as.Date(months), prob = prob, train_end = as.Date("2020-01-01"), n_train = 360L,
-    train_base_rate = 0.15, as.data.frame(as.list(setNames(rep(1, length(PREDICTORS)), PREDICTORS)))
+    train_base_rate = 0.15, as.data.frame(as.list(setNames(rep(1, length(PREDICTORS)), PREDICTORS))),
+    toy_params()
   )
 }
 t0 <- as.POSIXct("2026-10-30 12:00:00", tz = "UTC")
@@ -93,4 +94,21 @@ test_that("model_history lists archived versions", {
   h <- model_history(file.path(dir, "predictions.csv"))
   expect_equal(h$version, "glm-long-v0")
   expect_equal(format(h$archived_at, "%Y-%m-%d %H:%M"), "2026-11-01 09:00")
+})
+
+test_that("a log from before PARAM_COLS reads blank and asks for a rebuild", {
+  dir <- withr::local_tempdir()
+  path <- file.path(dir, "predictions.csv")
+  old <- as_log_rows(score_rows("2020-01-01"), "backtest", t0)
+  readr::write_csv(old[, setdiff(LOG_COLS, PARAM_COLS)], path, na = "NA")
+  back <- read_log(path)
+  expect_named(back, LOG_COLS)
+  expect_true(all(is.na(back$b0)))
+  expect_true(log_needs_rebuild(back))
+})
+
+test_that("live rows without parameters don't force a rebuild", {
+  lg <- append_live(as_log_rows(score_rows("2020-01-01"), "backtest", t0), score_rows("2020-02-01"), t0)
+  lg$b0[lg$source == "live"] <- NA
+  expect_false(log_needs_rebuild(lg))
 })

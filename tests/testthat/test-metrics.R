@@ -1,7 +1,8 @@
 toy_log <- function(months, prob, actual = NA, base = 0.2) {
   rows <- data.frame(
     month = as.Date(months), prob = prob, train_end = as.Date("1980-01-01"), n_train = 360L,
-    train_base_rate = base, as.data.frame(as.list(setNames(rep(0, length(PREDICTORS)), PREDICTORS)))
+    train_base_rate = base, as.data.frame(as.list(setNames(rep(0, length(PREDICTORS)), PREDICTORS))),
+    toy_params()
   )
   lg <- as_log_rows(rows, "backtest", as.POSIXct("2026-10-30", tz = "UTC"))
   lg$rec_next12_actual <- actual
@@ -55,4 +56,48 @@ test_that("latest_reading skips an unscorable month", {
   expect_equal(r$month, as.Date("2026-10-01"))
   expect_equal(r$prev_month, as.Date("2026-08-01"))
   expect_equal(r$change_pts, 6, tolerance = 1e-9)
+})
+
+drivers_log <- function() {
+  panel <- build_panel(make_raw(300, usrec_on = c(40:48, 120:128, 200:210, 260:266)))
+  as_log_rows(walk_forward(panel), "backtest", as.POSIXct("2026-10-30", tz = "UTC"))
+}
+
+test_that("contributions rebuild the logged probability", {
+  lg <- drivers_log()
+  ct <- driver_contributions(lg)
+  expect_named(ct, c("month", PREDICTORS, "b0"))
+  expect_equal(plogis(ct$b0 + rowSums(ct[, PREDICTORS])), lg$prob, tolerance = 1e-4)
+})
+
+test_that("a contribution pushes up only on the risky side of the median", {
+  lg <- drivers_log()
+  ct <- driver_contributions(lg)
+  for (p in PREDICTORS) {
+    risky <- EXPECTED_SIGN[[p]] * (lg[[p]] - lg[[paste0("med_", p)]])
+    expect_true(all(ct[[p]] * risky >= -1e-12), info = p)
+  }
+})
+
+test_that("driver_change terms sum to the change in probability", {
+  lg <- drivers_log()
+  for (pair in list(c("1995-11-01", "1996-02-01"), c("1996-03-01", "1996-06-01"))) {
+    from <- as.Date(pair[1])
+    to <- as.Date(pair[2])
+    d <- driver_change(lg, from, to)
+    expect_equal(d$driver, c(PREDICTORS, "refit"))
+    expect_lt(abs(sum(d$pts) - 100 * (lg$prob[lg$month == to] - lg$prob[lg$month == from])), 0.01)
+  }
+})
+
+test_that("driver_change has no refit term within one fit", {
+  d <- driver_change(drivers_log(), as.Date("1996-03-01"), as.Date("1996-06-01"))
+  expect_equal(d$pts[d$driver == "refit"], 0)
+})
+
+test_that("driver_change is NULL for a month without parameters", {
+  lg <- drivers_log()
+  lg$b0[lg$month == as.Date("1996-03-01")] <- NA
+  expect_null(driver_change(lg, as.Date("1996-03-01"), as.Date("1996-06-01")))
+  expect_null(driver_change(lg, as.Date("1900-01-01"), as.Date("1996-06-01")))
 })

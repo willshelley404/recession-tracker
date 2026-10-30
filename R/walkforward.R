@@ -26,6 +26,7 @@ training_rows <- function(panel, as_of) {
     n_train = model$n_train,
     train_base_rate = model$base_rate,
     rows[, PREDICTORS, drop = FALSE],
+    as.list(model_params(model)),
     row.names = NULL
   )
 }
@@ -34,7 +35,7 @@ training_rows <- function(panel, as_of) {
   data.frame(
     month = as.Date(character()), prob = numeric(), train_end = as.Date(character()),
     n_train = integer(), train_base_rate = numeric(),
-    as.data.frame(sapply(PREDICTORS, function(p) numeric(), simplify = FALSE))
+    as.data.frame(sapply(c(PREDICTORS, PARAM_COLS), function(p) numeric(), simplify = FALSE))
   )
 }
 

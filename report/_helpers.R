@@ -52,3 +52,20 @@ tm_layout <- function(p, yaxis = list(), ...) {
     ...
   ) |> plotly::config(displaylogo = FALSE)
 }
+
+# ── Drivers ──────────────────────────────────────────────────────────────────
+DRIVER_LABEL <- c(
+  yield_spread = "Yield curve", u_rise = "Unemployment rise", pay_3m = "Payroll momentum",
+  real_rate = "Real fed funds rate", prime_lfpr = "Prime-age participation", sent_chg12 = "Sentiment change"
+)
+# Fixed categorical order, checked with the dataviz palette validator on white
+# (adjacent stacked pairs separate under CVD). Not the brand hues: navy and
+# orange already mean backtest and live on the chart above.
+DRIVER_COLOR <- c(
+  yield_spread = "#6250d6", u_rise = "#eda100", pay_3m = "#2a78d6",
+  real_rate = "#e87ba4", prime_lfpr = "#008300", sent_chg12 = "#1baf7a"
+)
+DRIVER_FMT <- c(
+  yield_spread = "%.2f pp", u_rise = "%.1f pp", pay_3m = "%+.0fk jobs/mo",
+  real_rate = "%.2f pp", prime_lfpr = "%.1f%%", sent_chg12 = "%+.1f pts"
+)

@@ -54,6 +54,6 @@ test_that("score_month returns zero rows for an incomplete month", {
 
 test_that("output columns", {
   out <- walk_forward(wf_panel())
-  expect_named(out, c("month", "prob", "train_end", "n_train", "train_base_rate", PREDICTORS))
+  expect_named(out, c("month", "prob", "train_end", "n_train", "train_base_rate", PREDICTORS, PARAM_COLS))
   expect_true(all(out$n_train <= WINDOW_MONTHS))
 })

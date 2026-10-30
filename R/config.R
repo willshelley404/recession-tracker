@@ -27,6 +27,10 @@ EXPECTED_SIGN  <- c(
   sent_chg12   = -1  # falling sentiment → more risk
 )
 
+# Fitted parameters logged with every scored month (intercept, β at
+# lambda.1se, scaler median/MAD), so each reading can be split into drivers
+PARAM_COLS <- c("b0", paste0("b_", PREDICTORS), paste0("med_", PREDICTORS), paste0("mad_", PREDICTORS))
+
 WINDOW_MONTHS  <- 360L # rolling window of labelled months
 EMBARGO_MONTHS <- 12L  # rec_next12 at month t resolves at t + 12
 FIRST_FORECAST <- as.Date("1985-01-01")

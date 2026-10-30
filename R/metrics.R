@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# R/metrics.R — backtest scores, past run-ups, latest reading
+# R/metrics.R — backtest scores, past run-ups, latest reading, drivers
 # ─────────────────────────────────────────────────────────────────────────────
 
 #' Scores over rows whose outcome is known. Climatology forecast = each row's
@@ -71,5 +71,47 @@ latest_reading <- function(log) {
     prev_month = if (n > 1) lg$month[n - 1] else as.Date(NA),
     prev_prob = if (n > 1) lg$prob[n - 1] else NA_real_,
     change_pts = if (n > 1) (lg$prob[n] - lg$prob[n - 1]) * 100 else NA_real_
+  )
+}
+
+# ── Drivers ──────────────────────────────────────────────────────────────────
+
+# Each predictor's term β_k·z_k in the log-odds for data `x` (rows) under the
+# fitted parameters in `m` (rows, recycled). z = 0 at the training median, so
+# a term is the push away from a neutral reading.
+.contrib <- function(x, m) {
+  sapply(PREDICTORS, function(p) {
+    m[[paste0("b_", p)]] * robust_z(x[[p]], m[[paste0("med_", p)]], m[[paste0("mad_", p)]])
+  }, simplify = "matrix")
+}
+
+#' Per month: each predictor's push on the log-odds and the intercept.
+#' Rows logged without parameters come back NA.
+driver_contributions <- function(log) {
+  ct <- matrix(.contrib(log, log), nrow = nrow(log), dimnames = list(NULL, PREDICTORS))
+  data.frame(month = log$month, as.data.frame(ct), b0 = log$b0)
+}
+
+#' Change in probability from month `from` to month `to`, in percentage
+#' points, split into one term per predictor plus "refit"; the terms sum to
+#' the change. Refit = `from`'s data scored by `to`'s model, minus `from`'s
+#' reading. The rest is the data's move, shared across predictors by each
+#' one's change in log-odds under `to`'s model (times the logistic's secant
+#' slope over that move). NULL if either month is missing or unparameterised.
+driver_change <- function(log, from, to) {
+  a <- log[log$month == from, , drop = FALSE]
+  b <- log[log$month == to, , drop = FALSE]
+  if (nrow(a) != 1 || nrow(b) != 1 || is.na(a$b0) || is.na(b$b0)) return(NULL)
+  ca_b <- .contrib(a, b)
+  cb_b <- .contrib(b, b)
+  p_from <- stats::plogis(a$b0 + sum(.contrib(a, a)))
+  p_cross <- stats::plogis(b$b0 + sum(ca_b))
+  p_to <- stats::plogis(b$b0 + sum(cb_b))
+  d_eta <- cb_b - ca_b
+  slope <- if (abs(sum(d_eta)) > 1e-9) (p_to - p_cross) / sum(d_eta) else p_to * (1 - p_to)
+  data.frame(
+    driver = c(PREDICTORS, "refit"),
+    pts = 100 * c(slope * d_eta, p_cross - p_from),
+    row.names = NULL
   )
 }

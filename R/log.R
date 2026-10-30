@@ -8,7 +8,7 @@
 
 LOG_COLS <- c(
   "month", "prob", "source", "model_version", "run_at", "train_end", "n_train",
-  "train_base_rate", PREDICTORS, "interpolated", "rec_next12_actual"
+  "train_base_rate", PREDICTORS, "interpolated", "rec_next12_actual", PARAM_COLS
 )
 
 #' Scored rows (from walk_forward/score_month) → log schema. Numbers are
@@ -16,7 +16,8 @@ LOG_COLS <- c(
 #' re-reads 17-digit doubles a ulp off, which would rewrite every row).
 LOG_DIGITS <- 6
 as_log_rows <- function(rows, source, run_at) {
-  rows[, PREDICTORS] <- lapply(rows[, PREDICTORS, drop = FALSE], round, LOG_DIGITS)
+  num <- c(PREDICTORS, PARAM_COLS)
+  rows[, num] <- lapply(rows[, num, drop = FALSE], round, LOG_DIGITS)
   out <- data.frame(
     month = rows$month,
     prob = round(rows$prob, LOG_DIGITS),
@@ -29,6 +30,7 @@ as_log_rows <- function(rows, source, run_at) {
     rows[, PREDICTORS, drop = FALSE],
     interpolated = rep("", nrow(rows)),
     rec_next12_actual = rep(NA_real_, nrow(rows)),
+    rows[, PARAM_COLS, drop = FALSE],
     stringsAsFactors = FALSE,
     row.names = NULL
   )
@@ -52,6 +54,9 @@ read_log <- function(path = LOG_PATH) {
   )
   lg <- as.data.frame(readr::read_csv(path, col_types = types, na = c("NA"), progress = FALSE))
   lg$interpolated[is.na(lg$interpolated)] <- ""
+  # Logs written before PARAM_COLS existed: blank, and log_needs_rebuild()
+  # regenerates the backtest that can be regenerated
+  for (p in setdiff(PARAM_COLS, names(lg))) lg[[p]] <- NA_real_
   lg[, LOG_COLS]
 }
 
@@ -68,7 +73,8 @@ write_log_atomic <- function(df, path = LOG_PATH) {
 }
 
 log_needs_rebuild <- function(log) {
-  is.null(log) || nrow(log) == 0 || any(log$model_version != MODEL_VERSION)
+  is.null(log) || nrow(log) == 0 || any(log$model_version != MODEL_VERSION) ||
+    anyNA(log$b0[log$source == "backtest"])
 }
 
 archive_log <- function(path = LOG_PATH) {

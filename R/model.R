@@ -9,13 +9,16 @@ build_scaler <- function(df, cols, mad_min = 1e-6) {
   list(center = center, scale = scale, cols = cols)
 }
 
-#' z = clamp((x − median) / MAD, −3, 3); NA → 0 (= the training median)
+#' z = clamp((x − median) / MAD, −3, 3); NA → 0 (= the training median).
+#' Vectorised over center/scale too, for per-row logged parameters.
+robust_z <- function(x, center, scale) {
+  z <- (x - center) / scale
+  z[is.na(z)] <- 0
+  pmax(-3, pmin(3, z))
+}
+
 apply_scaler <- function(df, scaler) {
-  for (v in scaler$cols) {
-    z <- (df[[v]] - scaler$center[[v]]) / scaler$scale[[v]]
-    z[is.na(z)] <- 0
-    df[[v]] <- pmax(-3, pmin(3, z))
-  }
+  for (v in scaler$cols) df[[v]] <- robust_z(df[[v]], scaler$center[[v]], scaler$scale[[v]])
   df
 }
 
@@ -61,6 +64,15 @@ fit_glm <- function(train) {
     base_rate = mean(y),
     n_train = nrow(train),
     train_end = if ("date" %in% names(train)) max(train$date) else as.Date(NA)
+  )
+}
+
+#' Named vector in PARAM_COLS order: intercept + β at lambda.1se, scaler median/MAD
+model_params <- function(model) {
+  b <- as.numeric(stats::coef(model$fit, s = "lambda.1se"))
+  stats::setNames(
+    c(b, model$scaler$center[PREDICTORS], model$scaler$scale[PREDICTORS]),
+    PARAM_COLS
   )
 }
 

@@ -53,3 +53,15 @@ test_that("every fold has a positive", {
   f <- cv_folds(y)
   expect_setequal(f[y == 1], 1:5)
 })
+
+test_that("logged parameters reproduce the prediction", {
+  tr <- make_train()
+  m <- fit_glm(tr)
+  pr <- model_params(m)
+  expect_named(pr, PARAM_COLS)
+  x <- tr[1:20, ]
+  terms <- sapply(PREDICTORS, function(p) {
+    pr[[paste0("b_", p)]] * robust_z(x[[p]], pr[[paste0("med_", p)]], pr[[paste0("mad_", p)]])
+  })
+  expect_equal(plogis(pr[["b0"]] + rowSums(terms)), predict_glm(m, x), tolerance = 1e-10)
+})

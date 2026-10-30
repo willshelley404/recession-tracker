@@ -31,3 +31,6 @@ make_raw <- function(n_months = 120, missing = list(), usrec_on = integer(), see
     fetched_at = as.POSIXct("2026-10-30 12:00:00", tz = "UTC")
   )
 }
+
+# Placeholder fitted parameters for hand-built scored rows (see PARAM_COLS)
+toy_params <- function() as.list(setNames(rep(1, length(PARAM_COLS)), PARAM_COLS))
