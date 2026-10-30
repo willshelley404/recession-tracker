@@ -7,6 +7,11 @@
 # chart is always one model.
 # ─────────────────────────────────────────────────────────────────────────────
 
+# Month arithmetic used throughout (bound here so lubridate needn't be attached)
+`%m+%` <- lubridate::`%m+%`
+`%m-%` <- lubridate::`%m-%`
+n_months <- function(k) lubridate::period(k, "month")
+
 # ── Model ────────────────────────────────────────────────────────────────────
 MODEL_VERSION  <- "glm-long-v1"
 PREDICTORS     <- c("yield_spread", "u_rise", "pay_3m", "real_rate", "prime_lfpr", "sent_chg12")
