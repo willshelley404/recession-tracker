@@ -1,0 +1,235 @@
+---
+title: "Recession Tracker"
+subtitle: "GLM 12-month recession probability · walk-forward since 1985"
+format:
+  html:
+    theme:
+      light: cosmo
+      dark:  darkly
+    toc: true
+    toc-depth: 3
+    toc-location: left
+    number-sections: false
+    page-layout: full
+    code-tools: true
+    code-fold: true
+    code-overflow: wrap
+    smooth-scroll: true
+    embed-resources: true
+    fig-responsive: true
+    fig-align: center
+    fig-width: 11
+    fig-height: 5
+    grid:
+      body-width: 1180px
+      sidebar-width: 260px
+params:
+  log_path: "../log/predictions.csv"
+  usrec_path: "../log/usrec.csv"
+execute:
+  echo: true
+  warning: false
+  message: false
+  freeze: false
+engine: knitr
+---
+
+<!--
+PURPOSE   Monthly record of one model's 12-month-ahead US recession probability:
+          did the latest reading move, and how does it compare with the run-ups
+          to past recessions? History is a walk-forward backtest; each later
+          month is a live row appended by run_monthly.R and never rewritten.
+SCOPE     Sign-constrained Ridge GLM only (TerraMetric-Atlas "Long-history
+          subset" spec). Not TerraMetric-Atlas's blended headline.
+PARAMS    log_path   — prediction log CSV (default ../log/predictions.csv)
+          usrec_path — NBER recession indicator CSV (default ../log/usrec.csv)
+RENDER    quarto render report/recession_tracker.qmd   (from the repo root)
+PREREQ    Rscript run_monthly.R   (fetches FRED, updates log/, renders this)
+DEPENDS   R: readr, dplyr, lubridate, plotly, gt, htmltools; the repo's R/ modules.
+          Reads only log/ — never fetches.
+-->
+
+```{r}
+#| label: params
+log_path   <- params$log_path
+usrec_path <- params$usrec_path
+```
+
+```{r}
+#| label: setup
+#| include: false
+for (f in sort(list.files("../R", pattern = "\\.R$", full.names = TRUE))) source(f)
+source("_helpers.R")
+
+lg <- read_log(log_path)
+usrec <- read.csv(usrec_path, colClasses = c(date = "Date"))
+lg <- lg[order(lg$month), ]
+
+now <- latest_reading(lg)
+met <- backtest_metrics(lg[lg$source == "backtest", ])
+rt <- runup_table(lg, usrec)
+last12 <- lg$prob[lg$month > now$month %m-% n_months(12)]
+spans <- recession_spans(usrec, from = min(lg$month) %m-% n_months(24))
+interp <- unique(lg[nzchar(lg$interpolated), c("month", "interpolated")])
+```
+
+# 1 — Latest reading
+
+```{r}
+#| label: kpis
+chg_col <- if (is.na(now$change_pts)) PAL$neutral else if (now$change_pts > 0) PAL$negative else PAL$positive
+kpi_row(
+  kpi_card("Recession probability (12m)", fmt_pct(now$prob), format(now$month, "%B %Y"), PAL$orange),
+  kpi_card("Change", fmt_pts(now$change_pts),
+           if (is.na(now$prev_month)) NULL else paste("vs", format(now$prev_month, "%B %Y")), chg_col),
+  kpi_card("Last 12 months", paste(fmt_pct(min(last12)), "–", fmt_pct(max(last12))), "range", PAL$navy),
+  kpi_card("Logged", sprintf("%d months", nrow(lg)),
+           sprintf("%d backtest · %d live", sum(lg$source == "backtest"), sum(lg$source == "live")), PAL$teal)
+)
+```
+
+```{r}
+#| label: headline-compare
+peaks <- sprintf("%s %s", rt$recession, fmt_pct(rt$runup_peak, 0))
+above <- rt$recession[now$prob >= rt$runup_peak]
+callout(
+  "output", "Compared with past run-ups",
+  sprintf(
+    "Today's %s is %s. In the 12 months before each recession since 1985 the model peaked at: %s.",
+    fmt_pct(now$prob),
+    if (length(above)) paste("at or above the run-up peak before", paste(above, collapse = ", "))
+    else "below every pre-recession run-up peak",
+    paste(peaks, collapse = " · ")
+  )
+)
+```
+
+# 2 — History
+
+Monthly probability from `r format(min(lg$month), "%Y")`. Shaded bands are NBER recessions.
+The navy line is the walk-forward backtest; orange points are live monthly readings.
+
+```{r}
+#| label: history-chart
+shapes <- lapply(seq_len(nrow(spans)), function(i) list(
+  type = "rect", xref = "x", yref = "paper", layer = "below", line = list(width = 0),
+  x0 = spans$start[i], x1 = spans$end[i] %m+% n_months(1), y0 = 0, y1 = 1, fillcolor = PAL$band
+))
+shapes <- c(shapes, list(list(
+  type = "line", xref = "paper", x0 = 0, x1 = 1, y0 = 50, y1 = 50,
+  line = list(color = PAL$neutral, dash = "dash", width = 1)
+)))
+bt <- lg[lg$source == "backtest", ]
+lv <- lg[lg$source == "live", ]
+
+p <- plotly::plot_ly() |>
+  plotly::add_lines(data = bt, x = ~month, y = ~ prob * 100, name = "Backtest",
+                    line = list(color = PAL$navy, width = 1.6),
+                    hovertemplate = "%{x|%b %Y}: %{y:.1f}%<extra>backtest</extra>")
+if (nrow(lv)) {
+  p <- p |> plotly::add_markers(data = lv, x = ~month, y = ~ prob * 100, name = "Live",
+                                marker = list(color = PAL$orange, size = 7),
+                                hovertemplate = "%{x|%b %Y}: %{y:.1f}%<extra>live</extra>")
+}
+p |>
+  plotly::add_annotations(x = now$month, y = now$prob * 100, text = fmt_pct(now$prob),
+                          showarrow = TRUE, arrowcolor = PAL$orange, ax = 30, ay = -30,
+                          font = list(color = PAL$orange, size = 13)) |>
+  tm_layout(shapes = shapes, yaxis = list(title = "Probability (%)", range = c(0, 100)))
+```
+
+# 3 — Compared with past run-ups
+
+```{r}
+#| label: runup-table
+today <- data.frame(
+  recession = sprintf("Today · last 12 months to %s", format(now$month, "%b %Y")),
+  runup_peak = max(last12), runup_mean = mean(last12), spell_peak = NA_real_, spell_mean = NA_real_
+)
+tbl <- rbind(rt, today)
+gt::gt(tbl) |>
+  gt::cols_label(recession = "Recession", runup_peak = "Peak", runup_mean = "Mean",
+                 spell_peak = "Peak", spell_mean = "Mean") |>
+  gt::tab_spanner("Run-up · 12 months before", c(runup_peak, runup_mean)) |>
+  gt::tab_spanner("TerraMetric-Atlas window · incl. recession", c(spell_peak, spell_mean)) |>
+  gt::fmt_percent(c(runup_peak, runup_mean, spell_peak, spell_mean), decimals = 0) |>
+  gt::sub_missing(missing_text = "—") |>
+  gt::tab_style(gt::cell_text(weight = "bold"), gt::cells_body(rows = nrow(tbl))) |>
+  gt::tab_style(gt::cell_borders(sides = "top", color = PAL$navy, weight = gt::px(2)),
+                gt::cells_body(rows = nrow(tbl))) |>
+  gt::tab_options(column_labels.background.color = "#f1f3f5", table.width = gt::pct(100))
+```
+
+The second window runs from 12 months before each recession *through the recession itself*, so its
+numbers are higher: the model's strongest readings usually arrive once a recession is already under
+way. These match the Rolling Backtest panel in TerraMetric-Atlas. The run-up window is the fair
+comparison with today.
+
+# 4 — Model notes
+
+## 4.1 Specification
+
+```{r}
+#| label: spec
+callout("logic", "Model",
+  paste0("Ridge logistic regression on six predictors: yield curve (10Y–2Y), unemployment rise above its ",
+         "12-month low, 3-month payroll momentum, real fed funds rate, prime-age participation, and the ",
+         "12-month change in consumer sentiment. Each coefficient is constrained to the sign economic ",
+         "theory expects. Rolling 360-month window; refit each January on outcomes already known ",
+         "(12-month embargo). Version <code>", MODEL_VERSION, "</code>."))
+```
+
+## 4.2 Backtest performance
+
+```{r}
+#| label: metrics
+kpi_row(
+  kpi_card("Brier skill", sprintf("%.2f", met$skill), "vs. forecasting the base rate", PAL$navy),
+  kpi_card("AUC", sprintf("%.2f", met$auc), "ranking of risky vs. safe months", PAL$navy),
+  kpi_card("Hit rate", fmt_pct(met$hit_rate, 0), ">50% with a recession ahead", PAL$teal),
+  kpi_card("False alarms", fmt_pct(met$false_alarm_rate, 0), ">50% with no recession ahead", PAL$warning)
+)
+```
+
+## 4.3 Caveats
+
+```{r}
+#| label: caveats
+callout("warn", "Read these before relying on the history",
+  paste0(
+    "<ul style='margin:0;padding-left:18px;'>",
+    "<li><b>Revised data.</b> History uses today's FRED values, not what was published at the time, ",
+    "so it is somewhat more flattering than a true real-time record.</li>",
+    "<li><b>NBER dating lag ignored.</b> Outcomes count as known 12 months later; in reality NBER ",
+    "dates turning points 6–12+ months after the fact.</li>",
+    "<li><b>GLM alone.</b> This is not TerraMetric-Atlas's headline, which blends the GLM with a ",
+    "hand-tuned prior.</li>",
+    if (nrow(interp)) paste0("<li><b>Interpolated inputs.</b> ",
+                             paste(sprintf("%s (%s)", format(interp$month, "%b %Y"), gsub(";", ", ", interp$interpolated)),
+                                   collapse = "; "),
+                             " — single missing months filled log-linearly.</li>") else "",
+    "</ul>"
+  ))
+```
+
+<details><summary>Glossary</summary>
+
+**Brier skill**
+: 1 − (model Brier score ÷ Brier score of always forecasting the training base rate). Above 0 beats the base rate.
+
+**AUC**
+: Probability that a randomly chosen month with a recession ahead scores higher than one without. 0.5 = coin flip, 1 = perfect.
+
+**Walk-forward**
+: Each prediction comes from a model fitted only on data available at the time.
+
+**Embargo**
+: The 12-month gap between the last training label and the forecast month, so no training outcome overlaps the forecast.
+
+**rec_next12**
+: 1 if any NBER recession month falls in the next 12 months.
+
+**NBER**
+: National Bureau of Economic Research, which dates US recessions (FRED series USREC).
+
+</details>
