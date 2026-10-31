@@ -41,7 +41,37 @@ test_that("sent_chg12 is the date-matched 12-month change", {
                val_at(raw, "UMCSENT", d) - val_at(raw, "UMCSENT", as.Date("1989-05-01")))
 })
 
-test_that("complete flags rows with all six predictors", {
+test_that("gap_rise is the U6 - U3 gap above its 12-month low", {
+  raw <- make_raw(120)
+  p <- build_panel(raw)
+  d <- p$date[60]
+  w <- p$date[49:60]
+  gap <- sapply(w, function(m) val_at(raw, "U6RATE", m) - val_at(raw, "UNRATE", m))
+  expect_equal(p$gap_rise[p$date == d], gap[12] - min(gap), tolerance = 1e-9)
+})
+
+test_that("gap_rise before U6 starts doesn't block a month; after, it does", {
+  raw <- make_raw(120)
+  late <- as.Date("1985-01-01")
+  raw$series$U6RATE <- raw$series$U6RATE[raw$series$U6RATE$date >= late, ]
+  hole <- as.Date("1988-06-01")
+  raw$series$U6RATE <- raw$series$U6RATE[raw$series$U6RATE$date != hole, ]
+  p <- build_panel(raw)
+  core <- stats::complete.cases(p[, setdiff(PREDICTORS, "gap_rise")])
+  pre <- p$date < late
+  expect_true(all(is.na(p$gap_rise[pre])))
+  expect_equal(p$complete[pre], core[pre])
+  expect_false(p$complete[p$date == hole])
+  expect_true(p$complete[p$date == as.Date("1988-07-01")])
+})
+
+test_that("a U6 series that never arrives blocks every month", {
+  raw <- make_raw(120)
+  raw$series$U6RATE <- raw$series$U6RATE[0, ]
+  expect_false(any(build_panel(raw)$complete))
+})
+
+test_that("complete flags rows with all predictors", {
   raw <- make_raw(120)
   p <- build_panel(raw)
   expect_equal(p$complete, stats::complete.cases(p[, PREDICTORS]))

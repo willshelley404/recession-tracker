@@ -107,6 +107,19 @@ test_that("a log from before PARAM_COLS reads blank and asks for a rebuild", {
   expect_true(log_needs_rebuild(back))
 })
 
+test_that("a log from a version without a predictor still reads (so it can be archived)", {
+  dir <- withr::local_tempdir()
+  path <- file.path(dir, "predictions.csv")
+  old <- as_log_rows(score_rows("2020-01-01"), "backtest", t0)
+  old$model_version <- "glm-long-v1"
+  drop <- c("gap_rise", "b_gap_rise", "med_gap_rise", "mad_gap_rise")
+  readr::write_csv(old[, setdiff(LOG_COLS, drop)], path, na = "NA")
+  back <- read_log(path)
+  expect_named(back, LOG_COLS)
+  expect_true(all(is.na(back$gap_rise)))
+  expect_true(log_needs_rebuild(back))
+})
+
 test_that("live rows without parameters don't force a rebuild", {
   lg <- append_live(as_log_rows(score_rows("2020-01-01"), "backtest", t0), score_rows("2020-02-01"), t0)
   lg$b0[lg$source == "live"] <- NA

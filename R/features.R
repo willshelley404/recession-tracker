@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# R/features.R — one row per month: NBER label + the six predictors
+# R/features.R — one row per month: NBER label + the seven predictors
 #
 # Every series is joined onto the contiguous USREC month grid first, so a
 # missing month is an NA row and every lag below is by calendar month, never
@@ -35,10 +35,14 @@ build_panel <- function(raw) {
   fallback <- .on_grid(raw, "DGS10", grid) - .on_grid(raw, "DGS2", grid)
   yield_spread <- ifelse(is.na(t10y2y), fallback, t10y2y)
 
+  # Rise above the 12-month low
+  rise12 <- function(x) {
+    x - zoo::rollapply(x, 12, function(w) if (all(is.na(w))) NA_real_ else min(w, na.rm = TRUE),
+                       fill = NA, align = "right")
+  }
   u <- .on_grid(raw, "UNRATE", grid)
-  u_trough <- zoo::rollapply(u, 12, function(w) if (all(is.na(w))) NA_real_ else min(w, na.rm = TRUE),
-                             fill = NA, align = "right")
-  u_rise <- u - u_trough
+  u_rise <- rise12(u)
+  gap_rise <- rise12(.on_grid(raw, "U6RATE", grid) - u)
 
   pay <- .on_grid(raw, "PAYEMS", grid)
   pay_chg <- pay - .lag_months(pay, grid, 1)
@@ -57,11 +61,18 @@ build_panel <- function(raw) {
     rec_next12 = rec_next12,
     yield_spread = yield_spread,
     u_rise = u_rise,
+    gap_rise = gap_rise,
     pay_3m = pay_3m,
     real_rate = real_rate,
     prime_lfpr = .on_grid(raw, "LNS11300060", grid),
     sent_chg12 = sent_chg12
   )
-  panel$complete <- stats::complete.cases(panel[, PREDICTORS])
+  panel$complete <- stats::complete.cases(panel[, setdiff(PREDICTORS, LATE_START)])
+  for (v in LATE_START) {
+    # A series that never arrives blocks every month rather than going neutral
+    has <- !is.na(panel[[v]])
+    first <- if (any(has)) min(grid[has]) else min(grid)
+    panel$complete <- panel$complete & (!is.na(panel[[v]]) | grid < first)
+  }
   panel
 }

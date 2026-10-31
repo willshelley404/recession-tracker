@@ -13,6 +13,7 @@ make_raw <- function(n_months = 120, missing = list(), usrec_on = integer(), see
     DGS10       = walk(5, 0.1),
     DGS2        = walk(4, 0.1),
     UNRATE      = pmax(2, walk(6, 0.1)),
+    U6RATE      = pmax(5, walk(11, 0.15)),
     PAYEMS      = 100000 + cumsum(rnorm(n_months, 150, 50)),
     FEDFUNDS    = pmax(0, walk(4, 0.1)),
     CPIAUCSL    = 100 * cumprod(1 + rnorm(n_months, 0.002, 0.001)),

@@ -54,9 +54,10 @@ read_log <- function(path = LOG_PATH) {
   )
   lg <- as.data.frame(readr::read_csv(path, col_types = types, na = c("NA"), progress = FALSE))
   lg$interpolated[is.na(lg$interpolated)] <- ""
-  # Logs written before PARAM_COLS existed: blank, and log_needs_rebuild()
-  # regenerates the backtest that can be regenerated
-  for (p in setdiff(PARAM_COLS, names(lg))) lg[[p]] <- NA_real_
+  # Logs written before PARAM_COLS existed, or by a version without a
+  # predictor: blank, and log_needs_rebuild() regenerates (or the version
+  # change archives) what can be
+  for (p in setdiff(c(PREDICTORS, PARAM_COLS), names(lg))) lg[[p]] <- NA_real_
   lg[, LOG_COLS]
 }
 

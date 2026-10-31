@@ -41,7 +41,8 @@ PURPOSE   Monthly record of one model's 12-month-ahead US recession probability:
           to past recessions? History is a walk-forward backtest; each later
           month is a live row appended by run_monthly.R and never rewritten.
 SCOPE     Sign-constrained Ridge GLM only (TerraMetric-Atlas "Long-history
-          subset" spec). Not TerraMetric-Atlas's blended headline.
+          subset" spec plus the U-6 − U-3 gap). Not TerraMetric-Atlas's
+          blended headline.
 PARAMS    log_path   — prediction log CSV (default ../log/predictions.csv)
           usrec_path — NBER recession indicator CSV (default ../log/usrec.csv)
           meta_path  — last run's data vintage + status (default ../log/meta.csv)
@@ -322,7 +323,7 @@ because no recession is under way.
 ```{r}
 #| label: spec
 callout("logic", "In one line",
-  paste0("A Ridge logistic regression of “recession in the next 12 months” on six monthly macro ",
+  paste0("A Ridge logistic regression of “recession in the next 12 months” on seven monthly macro ",
          "indicators. Each coefficient is held to the sign economic theory expects, and the model is ",
          "refitted on a rolling 30-year window using only outcomes already known at the time. ",
          "Version <code>", MODEL_VERSION, "</code>."))
@@ -339,12 +340,13 @@ $$
 
 The label is known once at least 6 of those 12 months have been observed.
 
-**Predictors.** All six come from FRED at monthly frequency. Daily series are averaged over the month.
+**Predictors.** All seven come from FRED at monthly frequency. Daily series are averaged over the month.
 
 | Predictor | Construction at month $t$ | FRED source | Expected sign of $\beta$ |
 |---|---|---|---|
 | Yield curve | $\text{spread}_t = \text{T10Y2Y}_t$, or $\text{DGS10}_t - \text{DGS2}_t$ where T10Y2Y is missing (pp) | [T10Y2Y](https://fred.stlouisfed.org/series/T10Y2Y), [DGS10](https://fred.stlouisfed.org/series/DGS10), [DGS2](https://fred.stlouisfed.org/series/DGS2) | $-$: a steeper curve means less risk |
 | Unemployment rise | $\Delta u_t = u_t - \min_{0 \le j \le 11} u_{t-j}$ (pp above the 12-month low) | [UNRATE](https://fred.stlouisfed.org/series/UNRATE) | $+$ |
+| Underemployment gap rise | $\Delta g_t = g_t - \min_{0 \le j \le 11} g_{t-j}$, with $g = \text{U-6} - u$ (pp above the 12-month low) | [U6RATE](https://fred.stlouisfed.org/series/U6RATE), [UNRATE](https://fred.stlouisfed.org/series/UNRATE) | $+$: more involuntary part-time and marginally attached workers means more risk |
 | Payroll momentum | $\text{pay}_t = \tfrac{1}{3}\sum_{j=0}^{2} \left(N_{t-j} - N_{t-j-1}\right)$ (thousand jobs per month) | [PAYEMS](https://fred.stlouisfed.org/series/PAYEMS) | $-$ |
 | Real fed funds rate | $r_t = i_t - 100\left(P_t / P_{t-12} - 1\right)$ (pp) | [FEDFUNDS](https://fred.stlouisfed.org/series/FEDFUNDS), [CPIAUCSL](https://fred.stlouisfed.org/series/CPIAUCSL) | $+$: tighter policy means more risk |
 | Prime-age participation | $\text{lfpr}_t$: participation rate, ages 25–54, level (%) | [LNS11300060](https://fred.stlouisfed.org/series/LNS11300060) | $-$ |
@@ -355,6 +357,10 @@ $P$ headline CPI and $S$ the University of Michigan sentiment index. Every lag i
 In the level series, a single missing month is filled log-linearly (see 4.3). The yield-curve
 series and USREC are never filled.
 
+U-6 starts in January 1994. Before then the gap is missing and scores as its training median
+($z = 0$), so it adds nothing to those readings; fits whose window holds no U-6 data give it a
+zero coefficient. From 1994 on, a month without U-6 is not scored.
+
 ### How it is applied
 
 **Scaling.** Each predictor $x_{k}$ is robust-scaled using the median and MAD of the training
@@ -364,11 +370,11 @@ $$
 z_{k,t} = \operatorname{clip}\!\left(\frac{x_{k,t} - \operatorname{med}_{\mathcal{T}}(x_k)}{\operatorname{MAD}_{\mathcal{T}}(x_k)},\,-3,\,3\right)
 $$
 
-**Model.** A logistic link on the six scaled predictors:
+**Model.** A logistic link on the seven scaled predictors:
 
 $$
 \Pr(R_t = 1 \mid z_t) = \Lambda\!\left(\beta_0 + \beta_{\text{spread}}\, z^{\text{spread}}_t + \beta_{u}\, z^{\Delta u}_t
-+ \beta_{\text{pay}}\, z^{\text{pay}}_t + \beta_{r}\, z^{r}_t + \beta_{\text{lfpr}}\, z^{\text{lfpr}}_t
++ \beta_{g}\, z^{\Delta g}_t + \beta_{\text{pay}}\, z^{\text{pay}}_t + \beta_{r}\, z^{r}_t + \beta_{\text{lfpr}}\, z^{\text{lfpr}}_t
 + \beta_{\text{sent}}\, z^{\Delta s}_t\right),
 \qquad \Lambda(v) = \frac{1}{1 + e^{-v}}
 $$
@@ -379,12 +385,12 @@ constraints:
 $$
 \hat\beta(\lambda) = \arg\min_{\beta_0,\,\beta}\;
 -\frac{1}{|\mathcal{T}|}\sum_{s \in \mathcal{T}} \Big[ R_s\,\eta_s - \log\!\left(1 + e^{\eta_s}\right) \Big]
-+ \frac{\lambda}{2}\sum_{k=1}^{6} \beta_k^2,
++ \frac{\lambda}{2}\sum_{k=1}^{7} \beta_k^2,
 \qquad \eta_s = \beta_0 + z_s^{\top}\beta
 $$
 
 $$
-\text{s.t.}\quad \beta_{\text{spread}} \le 0,\;\; \beta_{u} \ge 0,\;\; \beta_{\text{pay}} \le 0,\;\;
+\text{s.t.}\quad \beta_{\text{spread}} \le 0,\;\; \beta_{u} \ge 0,\;\; \beta_{g} \ge 0,\;\; \beta_{\text{pay}} \le 0,\;\;
 \beta_{r} \ge 0,\;\; \beta_{\text{lfpr}} \le 0,\;\; \beta_{\text{sent}} \le 0
 $$
 
@@ -488,6 +494,9 @@ callout("warn", "Read these before relying on the history",
 
 **Model refit**
 : The change in a reading from re-estimating the model on a newer training window, with the data held fixed.
+
+**Underemployment gap**
+: U-6 minus the headline unemployment rate: people working part-time for economic reasons plus those marginally attached to the labour force, as a share of the labour force.
 
 **NBER**
 : National Bureau of Economic Research, which dates US recessions (FRED series USREC).
