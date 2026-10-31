@@ -1,5 +1,6 @@
 # Dev-only parity check: the ported model must reproduce TerraMetric-Atlas's
-# "Long-history subset" backtest on the same fetched panel (within 0.01).
+# "Long-history subset" backtest on the same fetched panel (within 0.01),
+# using the six predictors the two share (no gap_rise).
 # Needs network + FRED key + a TerraMetric-Atlas checkout. Run from repo root:
 #   Rscript -e "testthat::test_file('tests/parity/test-parity-atlas.R')"
 
@@ -19,6 +20,13 @@ test_that("port matches TerraMetric-Atlas backtest", {
   suppressMessages(suppressWarnings(source("global.R")))
   setwd(old)
   for (f in sort(list.files(file.path(root, "R"), pattern = "\\.R$", full.names = TRUE))) source(f)
+  # Atlas has no gap_rise: compare the six-predictor spec the two share
+  six <- setdiff(PREDICTORS, LATE_START)
+  assign("PREDICTORS", six, envir = globalenv())
+  assign("LATE_START", character(), envir = globalenv())
+  assign("PARAM_COLS", c("b0", paste0("b_", six), paste0("med_", six), paste0("mad_", six)), envir = globalenv())
+  assign("LOG_COLS", c("month", "prob", "source", "model_version", "run_at", "train_end", "n_train",
+                       "train_base_rate", six, "interpolated", "rec_next12_actual", PARAM_COLS), envir = globalenv())
 
   raw <- fetch_fred()
   panel <- build_panel(raw)

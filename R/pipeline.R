@@ -37,7 +37,7 @@ run_pipeline <- function(fetch = fetch_fred, rebuild = FALSE, render = TRUE,
     # A fetch that "succeeds" with missing or truncated series must not
     # replace good history
     if (nrow(backtest) == 0) {
-      stop("refusing to rebuild: no month has all six predictors (check the fetched series)", call. = FALSE)
+      stop("refusing to rebuild: no month has complete predictors (check the fetched series)", call. = FALSE)
     }
     new_end <- max(c(backtest$month, keep_live$month))
     if (!is.null(log) && nrow(log) > 0 && new_end < max(log$month)) {

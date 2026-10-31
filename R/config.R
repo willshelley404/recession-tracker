@@ -2,9 +2,9 @@
 # R/config.R — model specification and paths
 #
 # Ported from TerraMetric-Atlas R/synopsis_tier3.R (2026-10-30), "Long-history
-# subset" spec. Changing anything in the model block means bumping
-# MODEL_VERSION: the log is archived and history rebuilt so one line on the
-# chart is always one model.
+# subset" spec, plus the U-6 − U-3 gap (v2). Changing anything in the model
+# block means bumping MODEL_VERSION: the log is archived and history rebuilt
+# so one line on the chart is always one model.
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Month arithmetic used throughout (bound here so lubridate needn't be attached)
@@ -13,14 +13,20 @@
 n_months <- function(k) lubridate::period(k, "month")
 
 # ── Model ────────────────────────────────────────────────────────────────────
-MODEL_VERSION  <- "glm-long-v1"
-PREDICTORS     <- c("yield_spread", "u_rise", "pay_3m", "real_rate", "prime_lfpr", "sent_chg12")
+MODEL_VERSION  <- "glm-long-v2"
+PREDICTORS     <- c("yield_spread", "u_rise", "gap_rise", "pay_3m", "real_rate", "prime_lfpr", "sent_chg12")
+
+# Predictors whose source series starts after FETCH_START (U6RATE: 1994).
+# Before their first value they are NA, which scores as the training median
+# (z = 0), so they add nothing until data exist; after it, NA blocks a month.
+LATE_START     <- "gap_rise"
 
 # Sign of β (effect of a higher value on recession risk) that macro theory
 # expects; each fitted β is constrained to it (0 allowed)
 EXPECTED_SIGN  <- c(
   yield_spread = -1, # steeper curve → less risk
   u_rise       = +1,
+  gap_rise     = +1, # more involuntary part-time / marginally attached → more risk
   pay_3m       = -1,
   real_rate    = +1, # tighter policy → more risk
   prime_lfpr   = -1,
@@ -41,7 +47,7 @@ MIN_POSITIVES  <- 6L
 # ── Data ─────────────────────────────────────────────────────────────────────
 FRED_SERIES <- c(
   USREC = "USREC", T10Y2Y = "T10Y2Y", DGS10 = "DGS10", DGS2 = "DGS2",
-  UNRATE = "UNRATE", PAYEMS = "PAYEMS", FEDFUNDS = "FEDFUNDS",
+  UNRATE = "UNRATE", U6RATE = "U6RATE", PAYEMS = "PAYEMS", FEDFUNDS = "FEDFUNDS",
   CPIAUCSL = "CPIAUCSL", LNS11300060 = "LNS11300060", UMCSENT = "UMCSENT"
 )
 # Indicators and rate series aren't gap-filled; levels with a single missing

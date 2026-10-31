@@ -4,9 +4,11 @@ A monthly record of one model's 12-month-ahead US recession probability, from 19
 the latest month, with NBER recessions shaded.
 
 - **Model:** a sign-constrained Ridge logistic regression (GLM). It is the "Long-history
-  subset" spec ported from TerraMetric-Atlas, and uses six predictors:
+  subset" spec ported from TerraMetric-Atlas, plus the U-6 − U-3 underemployment gap, and uses
+  seven predictors:
   - yield curve
   - unemployment rise
+  - underemployment gap rise (U-6 − U-3; U-6 starts in 1994 and is neutral before then)
   - payroll momentum
   - real fed funds rate
   - prime-age participation
@@ -39,6 +41,8 @@ Rscript run_monthly.R --no-render # update the log only
 | `log/meta.csv` | Last run: FRED fetch time (the data vintage), status, rows added |
 | `log/archive/` | Logs from earlier model versions |
 | `report/recession_tracker.html` | The self-contained report |
+| `report/recession_tracker.png` | Static chart of the full history (emailed) |
+| `report/recession_tracker_24m.png` | Static chart of the last 24 months (emailed) |
 
 ## Tests
 
