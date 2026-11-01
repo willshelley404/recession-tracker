@@ -37,13 +37,16 @@ test_that("skip rule: too few positives means no forecast", {
   expect_false(any(out$month < as.Date("1990-01-01")))
 })
 
-test_that("score_month matches walk_forward in January", {
+test_that("score_month matches walk_forward in any month (January refit)", {
   p <- wf_panel()
-  jan <- as.Date("1998-01-01")
   wf <- walk_forward(p)
-  one <- score_month(p, jan)
-  expect_equal(nrow(one), 1)
-  expect_equal(one$prob, wf$prob[wf$month == jan], tolerance = 1e-12)
+  for (d in c("1998-01-01", "1998-07-01", "1998-12-01")) {
+    m <- as.Date(d)
+    one <- score_month(p, m)
+    expect_equal(nrow(one), 1)
+    expect_equal(one$prob, wf$prob[wf$month == m], tolerance = 1e-12)
+    expect_equal(one$train_end, wf$train_end[wf$month == m])
+  }
 })
 
 test_that("score_month returns zero rows for an incomplete month", {

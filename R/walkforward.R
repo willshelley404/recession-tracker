@@ -39,11 +39,16 @@ training_rows <- function(panel, as_of) {
   )
 }
 
-#' One out-of-sample prediction for `month` (zero rows if not scorable)
+# The model is refit on 1 January: every month of a year is scored by the fit
+# trained on labels known at the start of that year
+refit_date <- function(month) as.Date(sprintf("%s-01-01", format(month, "%Y")))
+
+#' One out-of-sample prediction for `month` (zero rows if not scorable), from
+#' its year's January fit — the same reading walk_forward() gives that month
 score_month <- function(panel, month) {
   row <- panel[panel$date == month & panel$complete, , drop = FALSE]
   if (nrow(row) == 0) return(.empty_rows())
-  model <- .fit_or_null(training_rows(panel, month))
+  model <- .fit_or_null(training_rows(panel, refit_date(month)))
   if (is.null(model)) return(.empty_rows())
   .as_rows(model, row)
 }
@@ -57,7 +62,7 @@ walk_forward <- function(panel, first = FIRST_FORECAST, through = NULL) {
   years <- sort(unique(as.integer(format(scorable$date, "%Y"))))
   out <- lapply(years, function(yr) {
     rows <- scorable[as.integer(format(scorable$date, "%Y")) == yr, , drop = FALSE]
-    model <- .fit_or_null(training_rows(panel, as.Date(sprintf("%d-01-01", yr))))
+    model <- .fit_or_null(training_rows(panel, refit_date(rows$date[1])))
     if (is.null(model)) return(NULL)
     .as_rows(model, rows)
   })

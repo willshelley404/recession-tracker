@@ -50,6 +50,21 @@ test_that("gap_rise is the U6 - U3 gap above its 12-month low", {
   expect_equal(p$gap_rise[p$date == d], gap[12] - min(gap), tolerance = 1e-9)
 })
 
+test_that("claims_rise is % above the 12-month low of claims", {
+  raw <- make_raw(120)
+  p <- build_panel(raw)
+  w <- p$date[49:60]
+  claims <- sapply(w, function(m) val_at(raw, "ICSA", m))
+  expect_equal(p$claims_rise[p$date == w[12]], (claims[12] / min(claims) - 1) * 100, tolerance = 1e-9)
+})
+
+test_that("baa_spread is the BAA10YM level", {
+  raw <- make_raw(120)
+  p <- build_panel(raw)
+  d <- p$date[80]
+  expect_equal(p$baa_spread[p$date == d], val_at(raw, "BAA10YM", d))
+})
+
 test_that("gap_rise before U6 starts doesn't block a month; after, it does", {
   raw <- make_raw(120)
   late <- as.Date("1985-01-01")
