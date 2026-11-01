@@ -2,7 +2,8 @@
 # R/config.R — model specification and paths
 #
 # Ported from TerraMetric-Atlas R/synopsis_tier3.R (2026-10-30), "Long-history
-# subset" spec, plus the U-6 − U-3 gap (v2). Changing anything in the model
+# subset" spec, plus the U-6 − U-3 gap (v2), the Baa corporate spread and
+# the rise in jobless claims (v3). Changing anything in the model
 # block means bumping MODEL_VERSION: the log is archived and history rebuilt
 # so one line on the chart is always one model.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -13,8 +14,11 @@
 n_months <- function(k) lubridate::period(k, "month")
 
 # ── Model ────────────────────────────────────────────────────────────────────
-MODEL_VERSION  <- "glm-long-v2"
-PREDICTORS     <- c("yield_spread", "u_rise", "gap_rise", "pay_3m", "real_rate", "prime_lfpr", "sent_chg12")
+MODEL_VERSION  <- "glm-long-v3"
+PREDICTORS     <- c(
+  "yield_spread", "u_rise", "gap_rise", "pay_3m", "real_rate", "prime_lfpr", "sent_chg12",
+  "baa_spread", "claims_rise"
+)
 
 # Predictors whose source series starts after FETCH_START (U6RATE: 1994).
 # Before their first value they are NA, which scores as the training median
@@ -30,7 +34,9 @@ EXPECTED_SIGN  <- c(
   pay_3m       = -1,
   real_rate    = +1, # tighter policy → more risk
   prime_lfpr   = -1,
-  sent_chg12   = -1  # falling sentiment → more risk
+  sent_chg12   = -1, # falling sentiment → more risk
+  baa_spread   = +1, # wider corporate credit spread → more risk
+  claims_rise  = +1  # layoffs picking up → more risk
 )
 
 # Fitted parameters logged with every scored month (intercept, β at
@@ -48,11 +54,12 @@ MIN_POSITIVES  <- 6L
 FRED_SERIES <- c(
   USREC = "USREC", T10Y2Y = "T10Y2Y", DGS10 = "DGS10", DGS2 = "DGS2",
   UNRATE = "UNRATE", U6RATE = "U6RATE", PAYEMS = "PAYEMS", FEDFUNDS = "FEDFUNDS",
-  CPIAUCSL = "CPIAUCSL", LNS11300060 = "LNS11300060", UMCSENT = "UMCSENT"
+  CPIAUCSL = "CPIAUCSL", LNS11300060 = "LNS11300060", UMCSENT = "UMCSENT",
+  BAA10YM = "BAA10YM", ICSA = "ICSA"
 )
 # Indicators and rate series aren't gap-filled; levels with a single missing
 # month (e.g. the Oct-2025 shutdown) are
-NO_INTERPOLATE <- c("USREC", "T10Y2Y", "DGS10", "DGS2")
+NO_INTERPOLATE <- c("USREC", "T10Y2Y", "DGS10", "DGS2", "BAA10YM")
 FETCH_START    <- as.Date("1959-01-01")
 
 # ── Paths (relative to the repo root) ────────────────────────────────────────

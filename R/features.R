@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# R/features.R — one row per month: NBER label + the seven predictors
+# R/features.R — one row per month: NBER label + the nine predictors
 #
 # Every series is joined onto the contiguous USREC month grid first, so a
 # missing month is an NA row and every lag below is by calendar month, never
@@ -55,6 +55,11 @@ build_panel <- function(raw) {
   sent <- .on_grid(raw, "UMCSENT", grid)
   sent_chg12 <- sent - .lag_months(sent, grid, 12)
 
+  # Jobless claims: % above their 12-month low (monthly average of weekly claims)
+  claims <- .on_grid(raw, "ICSA", grid)
+  claims_low <- claims - rise12(claims)
+  claims_rise <- (claims / claims_low - 1) * 100
+
   panel <- data.frame(
     date = grid,
     recession = rec,
@@ -65,7 +70,9 @@ build_panel <- function(raw) {
     pay_3m = pay_3m,
     real_rate = real_rate,
     prime_lfpr = .on_grid(raw, "LNS11300060", grid),
-    sent_chg12 = sent_chg12
+    sent_chg12 = sent_chg12,
+    baa_spread = .on_grid(raw, "BAA10YM", grid),
+    claims_rise = claims_rise
   )
   panel$complete <- stats::complete.cases(panel[, setdiff(PREDICTORS, LATE_START)])
   for (v in LATE_START) {

@@ -41,8 +41,9 @@ PURPOSE   Monthly record of one model's 12-month-ahead US recession probability:
           to past recessions? History is a walk-forward backtest; each later
           month is a live row appended by run_monthly.R and never rewritten.
 SCOPE     Sign-constrained Ridge GLM only (TerraMetric-Atlas "Long-history
-          subset" spec plus the U-6 − U-3 gap). Not TerraMetric-Atlas's
-          blended headline.
+          subset" spec plus the U-6 − U-3 gap, the Baa credit spread and the
+          jobless-claims rise). The same method as TerraMetric-Atlas's
+          recession model.
 PARAMS    log_path   — prediction log CSV (default ../log/predictions.csv)
           usrec_path — NBER recession indicator CSV (default ../log/usrec.csv)
           meta_path  — last run's data vintage + status (default ../log/meta.csv)
@@ -66,6 +67,14 @@ for (f in sort(list.files("../R", pattern = "\\.R$", full.names = TRUE))) source
 source("_helpers.R")
 
 lg <- read_log(log_path)
+# A model change bumps MODEL_VERSION; run_monthly.R then rebuilds the log
+# before rendering. Rendering alone would read the old model's parameters.
+if (any(lg$model_version != MODEL_VERSION)) {
+  stop(sprintf(
+    "The log was written by model %s but the code is %s. Run `Rscript run_monthly.R` (it rebuilds the log, then renders) instead of rendering this file directly.",
+    paste(unique(lg$model_version), collapse = ", "), MODEL_VERSION
+  ), call. = FALSE)
+}
 usrec <- read.csv(usrec_path, colClasses = c(date = "Date"))
 lg <- lg[order(lg$month), ]
 
@@ -196,7 +205,11 @@ p <- p |>
 pd <- plotly::plot_ly() |> plotly::layout(shapes = bands)
 for (k in PREDICTORS) {
   pd <- pd |> plotly::add_bars(x = drv$month, y = drv[[k]], name = DRIVER_LABEL[[k]],
-                               marker = list(color = DRIVER_COLOR[[k]], line = list(width = 0)),
+                               marker = list(color = DRIVER_COLOR[[k]], line = list(width = 0),
+                                             pattern = if (k %in% DRIVER_HATCHED) {
+                                               list(shape = "/", fgcolor = "#fcfcfb", fillmode = "overlay",
+                                                    size = 6, solidity = 0.3)
+                                             }),
                                hovertemplate = sprintf("%%{y:+.2f}<extra>%s</extra>", DRIVER_LABEL[[k]]))
 }
 
@@ -231,9 +244,9 @@ callout("note", sprintf("What is behind %s", format(now$month, "%B %Y")), paste0
 **How to read this table.** Each column compares the latest month with an earlier one, shown in the
 column header. Each row is how many percentage points of that change came from one predictor.
 Positive numbers (red) pushed risk up and negative numbers (green) pulled it down. **Model refit**
-is what re-estimating the model did with the data held fixed: the backtest refits every January
-and live readings refit every month. The rows add up to **Total**, the change in the headline
-reading.
+is what re-estimating the model did with the data held fixed. The model is refit every January,
+so it is zero within a year and only moves when a comparison crosses into a new year. The rows add
+up to **Total**, the change in the headline reading.
 
 ```{r}
 #| label: drivers-change
@@ -323,7 +336,7 @@ because no recession is under way.
 ```{r}
 #| label: spec
 callout("logic", "In one line",
-  paste0("A Ridge logistic regression of “recession in the next 12 months” on seven monthly macro ",
+  paste0("A Ridge logistic regression of “recession in the next 12 months” on nine monthly macro ",
          "indicators. Each coefficient is held to the sign economic theory expects, and the model is ",
          "refitted on a rolling 30-year window using only outcomes already known at the time. ",
          "Version <code>", MODEL_VERSION, "</code>."))
@@ -340,7 +353,7 @@ $$
 
 The label is known once at least 6 of those 12 months have been observed.
 
-**Predictors.** All seven come from FRED at monthly frequency. Daily series are averaged over the month.
+**Predictors.** All nine come from FRED at monthly frequency. Daily and weekly series are averaged over the month.
 
 | Predictor | Construction at month $t$ | FRED source | Expected sign of $\beta$ |
 |---|---|---|---|
@@ -351,11 +364,13 @@ The label is known once at least 6 of those 12 months have been observed.
 | Real fed funds rate | $r_t = i_t - 100\left(P_t / P_{t-12} - 1\right)$ (pp) | [FEDFUNDS](https://fred.stlouisfed.org/series/FEDFUNDS), [CPIAUCSL](https://fred.stlouisfed.org/series/CPIAUCSL) | $+$: tighter policy means more risk |
 | Prime-age participation | $\text{lfpr}_t$: participation rate, ages 25–54, level (%) | [LNS11300060](https://fred.stlouisfed.org/series/LNS11300060) | $-$ |
 | Sentiment change | $\Delta_{12} s_t = S_t - S_{t-12}$ (index points) | [UMCSENT](https://fred.stlouisfed.org/series/UMCSENT) | $-$: falling sentiment means more risk |
+| Baa credit spread | $\text{baa}_t$: Moody's Baa corporate yield minus the 10-year Treasury yield, level (pp) | [BAA10YM](https://fred.stlouisfed.org/series/BAA10YM) | $+$: a wider credit spread means more risk |
+| Jobless claims rise | $c_t = 100\left(C_t / \min_{0 \le j \le 11} C_{t-j} - 1\right)$ (% above the 12-month low) | [ICSA](https://fred.stlouisfed.org/series/ICSA) | $+$: rising layoffs mean more risk |
 
 Here $u$ is the unemployment rate, $N$ total nonfarm payrolls, $i$ the effective fed funds rate,
-$P$ headline CPI and $S$ the University of Michigan sentiment index. Every lag is by calendar month.
+$P$ headline CPI, $S$ the University of Michigan sentiment index and $C$ initial jobless claims. Every lag is by calendar month.
 In the level series, a single missing month is filled log-linearly (see 4.3). The yield-curve
-series and USREC are never filled.
+and credit-spread series and USREC are never filled.
 
 U-6 starts in January 1994. Before then the gap is missing and scores as its training median
 ($z = 0$), so it adds nothing to those readings; fits whose window holds no U-6 data give it a
@@ -370,12 +385,12 @@ $$
 z_{k,t} = \operatorname{clip}\!\left(\frac{x_{k,t} - \operatorname{med}_{\mathcal{T}}(x_k)}{\operatorname{MAD}_{\mathcal{T}}(x_k)},\,-3,\,3\right)
 $$
 
-**Model.** A logistic link on the seven scaled predictors:
+**Model.** A logistic link on the nine scaled predictors:
 
 $$
 \Pr(R_t = 1 \mid z_t) = \Lambda\!\left(\beta_0 + \beta_{\text{spread}}\, z^{\text{spread}}_t + \beta_{u}\, z^{\Delta u}_t
 + \beta_{g}\, z^{\Delta g}_t + \beta_{\text{pay}}\, z^{\text{pay}}_t + \beta_{r}\, z^{r}_t + \beta_{\text{lfpr}}\, z^{\text{lfpr}}_t
-+ \beta_{\text{sent}}\, z^{\Delta s}_t\right),
++ \beta_{\text{sent}}\, z^{\Delta s}_t + \beta_{\text{baa}}\, z^{\text{baa}}_t + \beta_{c}\, z^{c}_t\right),
 \qquad \Lambda(v) = \frac{1}{1 + e^{-v}}
 $$
 
@@ -407,9 +422,9 @@ $$
 \text{complete predictors and a resolved label } R_s
 $$
 
-The 12-month embargo means no training label looks past the forecast date. The backtest refits
-on 1 January of each forecast year and scores every month of that year. Each live reading refits
-with $\tau$ set to its own month. No forecast is made if $\mathcal{T}_\tau$ has fewer than 60 rows
+The 12-month embargo means no training label looks past the forecast date. The model refits
+on 1 January of each forecast year and scores every month of that year with that fit: backtest
+and live readings alike, so a live month reads exactly as it would in the backtest. No forecast is made if $\mathcal{T}_\tau$ has fewer than 60 rows
 or fewer than 6 recession-ahead months.
 
 ### What it produces
@@ -497,6 +512,12 @@ callout("warn", "Read these before relying on the history",
 
 **Underemployment gap**
 : U-6 minus the headline unemployment rate: people working part-time for economic reasons plus those marginally attached to the labour force, as a share of the labour force.
+
+**Baa credit spread**
+: The yield on Moody's Baa-rated (lowest investment-grade) corporate bonds minus the 10-year Treasury yield. It widens when lenders demand more to take corporate credit risk.
+
+**Initial jobless claims**
+: New weekly filings for unemployment insurance, a timely read on layoffs.
 
 **NBER**
 : National Bureau of Economic Research, which dates US recessions (FRED series USREC).

@@ -1,6 +1,6 @@
-# Dev-only parity check: the ported model must reproduce TerraMetric-Atlas's
-# "Long-history subset" backtest on the same fetched panel (within 0.01),
-# using the six predictors the two share (no gap_rise).
+# Dev-only parity check: TerraMetric-Atlas's recession model
+# (R/synopsis_tier3.R) is the same method, so on the same FRED fetch it must
+# reproduce our inputs, walk-forward history, scores and run-up peaks.
 # Needs network + FRED key + a TerraMetric-Atlas checkout. Run from repo root:
 #   Rscript -e "testthat::test_file('tests/parity/test-parity-atlas.R')"
 
@@ -9,52 +9,54 @@ ATLAS_DIR <- "C:/code_repos/TerraMetric-Atlas"
 root <- normalizePath(file.path(getwd(), "..", ".."))
 stopifnot(file.exists(file.path(root, "R", "config.R")))
 
-test_that("port matches TerraMetric-Atlas backtest", {
+test_that("TerraMetric-Atlas's recession model matches ours", {
   skip_if_not(dir.exists(ATLAS_DIR), "TerraMetric-Atlas checkout not found")
   skip_if(Sys.getenv("FRED_API_KEY") == "", "FRED_API_KEY not set")
 
   # Atlas first (its global.R sources into the global env), then ours on top
-  # — ours must win for fetch_fred(), which both define. None of the names
-  # Atlas's backtest calls are redefined by ours.
+  # — ours must win for fetch_fred(), which both define. Atlas's model
+  # functions have their own names, so none are redefined by ours.
   old <- setwd(ATLAS_DIR)
   suppressMessages(suppressWarnings(source("global.R")))
   setwd(old)
   for (f in sort(list.files(file.path(root, "R"), pattern = "\\.R$", full.names = TRUE))) source(f)
-  # Atlas has no gap_rise: compare the six-predictor spec the two share
-  six <- setdiff(PREDICTORS, LATE_START)
-  assign("PREDICTORS", six, envir = globalenv())
-  assign("LATE_START", character(), envir = globalenv())
-  assign("PARAM_COLS", c("b0", paste0("b_", six), paste0("med_", six), paste0("mad_", six)), envir = globalenv())
-  assign("LOG_COLS", c("month", "prob", "source", "model_version", "run_at", "train_end", "n_train",
-                       "train_base_rate", six, "interpolated", "rec_next12_actual", PARAM_COLS), envir = globalenv())
+  expect_equal(.GLM_PREDICTORS, PREDICTORS)
 
   raw <- fetch_fred()
+  atlas_series <- .fetch_glm_series()
+  for (id in names(FRED_SERIES)) {
+    expect_equal(atlas_series[[id]], raw$series[[id]], ignore_attr = TRUE, label = id)
+  }
+
   panel <- build_panel(raw)
-  labelled <- panel[panel$complete & !is.na(panel$rec_next12), ]
+  atlas_panel <- build_glm_panel(atlas_series)
+  cols <- c("date", "recession", "rec_next12", PREDICTORS, "complete")
+  expect_equal(atlas_panel[, cols], panel[, cols], ignore_attr = TRUE)
 
-  atlas <- backtest_recession_glm(labelled, PREDICTORS, FIRST_FORECAST)
   ours <- walk_forward(panel)
-
+  atlas <- backtest_recession_glm(atlas_panel)
   a <- atlas$series
   o <- ours[match(a$date, ours$month), ]
-  expect_false(anyNA(o$prob))
+  expect_equal(nrow(a), nrow(ours))
   cat(sprintf("\nmonths compared: %d | max |Δprob| = %.2e\n", nrow(a), max(abs(o$prob - a$prob))))
-  expect_lte(max(abs(o$prob - a$prob)), 0.01)
+  expect_lte(max(abs(o$prob - a$prob)), 1e-8)
 
-  lg <- as_log_rows(o, "backtest", Sys.time())
-  lg$rec_next12_actual <- a$rec_next12
+  # Scored unrounded: the log stores probabilities to 6 decimals
+  lg <- update_actuals(o, panel)
   m <- backtest_metrics(lg)
   cat(sprintf("skill  ours %.3f  atlas %.3f\nAUC    ours %.3f  atlas %.3f\n", m$skill, atlas$skill, m$auc, atlas$auc))
-  expect_lte(abs(m$skill - atlas$skill), 0.01)
-  expect_lte(abs(m$auc - atlas$auc), 0.01)
-
-  # Per-recession peaks over the rec_next12 = 1 spells (Atlas's definition)
-  r <- rle(a$rec_next12); e <- cumsum(r$lengths); s <- e - r$lengths + 1
-  for (i in which(r$values == 1)) {
-    yr <- format(a$date[s[i]] %m+% n_months(12), "%Y")
-    po <- max(o$prob[s[i]:e[i]])
-    pa <- atlas$episodes$peak_prob[atlas$episodes$recession == yr]
-    cat(sprintf("%s peak  ours %.1f%%  atlas %.1f%%\n", yr, 100 * po, 100 * pa))
-    expect_lte(abs(po - pa), 0.01)
+  for (k in c("brier", "brier_clim", "skill", "auc", "hit_rate", "false_alarm_rate", "n")) {
+    expect_equal(atlas[[k]], m[[k]], tolerance = 1e-8, label = k)
   }
+
+  ru <- runup_table(lg, panel[, c("date", "recession")])
+  expect_equal(atlas$episodes$recession, ru$recession)
+  expect_equal(atlas$episodes$runup_peak, ru$runup_peak, tolerance = 1e-8)
+  expect_equal(atlas$episodes$spell_peak, ru$spell_peak, tolerance = 1e-8)
+
+  # Atlas's headline is the latest month under its January refit
+  g <- train_recession_glm()
+  expect_equal(g$prob, utils::tail(ours$prob, 1), tolerance = 1e-8)
+  cat(sprintf("latest %s: ours %.1f%%  atlas %.1f%%\n", format(utils::tail(ours$month, 1), "%b %Y"),
+              100 * utils::tail(ours$prob, 1), 100 * g$prob))
 })

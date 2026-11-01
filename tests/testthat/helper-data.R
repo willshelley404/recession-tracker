@@ -18,7 +18,9 @@ make_raw <- function(n_months = 120, missing = list(), usrec_on = integer(), see
     FEDFUNDS    = pmax(0, walk(4, 0.1)),
     CPIAUCSL    = 100 * cumprod(1 + rnorm(n_months, 0.002, 0.001)),
     LNS11300060 = walk(82, 0.05),
-    UMCSENT     = pmax(40, walk(85, 2))
+    UMCSENT     = pmax(40, walk(85, 2)),
+    BAA10YM     = pmax(0.5, walk(2, 0.05)),
+    ICSA        = pmax(150000, walk(300000, 5000))
   )
   series <- lapply(names(vals), function(id) {
     df <- data.frame(date = dates, value = as.numeric(vals[[id]]))
