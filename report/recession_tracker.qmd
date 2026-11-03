@@ -109,9 +109,7 @@ kpi_row(
   kpi_card("Data fetched",
            if (is.null(meta)) "—" else format(meta$fetched_at, "%d %b %Y"),
            "FRED vintage used for every row", PAL$neutral),
-  kpi_card("Last 12 months", paste(fmt_pct(min(last12)), "–", fmt_pct(max(last12))), "range", PAL$navy),
-  kpi_card("Logged", sprintf("%d months", nrow(lg)),
-           sprintf("%d backtest · %d live", sum(lg$source == "backtest"), sum(lg$source == "live")), PAL$teal)
+  kpi_card("Last 12 months", paste(fmt_pct(min(last12)), "–", fmt_pct(max(last12))), "range", PAL$navy)
 )
 ```
 
@@ -326,7 +324,7 @@ The latest reading is `r fmt_pct(now$prob, 0)`. Section 1 shows which way it is 
 
 The reference columns run from 12 months before each recession *through the recession itself*, so
 their numbers are higher, because the model's strongest readings usually arrive once a recession has
-already started. They match the Rolling Backtest panel in TerraMetric-Atlas. Today has no equivalent
+already started. Today has no equivalent
 because no recession is under way.
 
 # 4 — Model notes
@@ -435,15 +433,6 @@ row and on the chart. Each term $\hat\beta_k z_{k,t}$ of the sum is that predict
 Section 2. The fitted $\hat\beta$, medians and MADs are logged with every month, so the split
 always uses the exact model that produced the reading.
 
-```{r}
-#| label: model-history
-if (nrow(history)) {
-  callout("note", "Model changes",
-    paste0("History was rebuilt after a model change. Earlier versions are archived in <code>log/archive/</code>: ",
-           paste(sprintf("<code>%s</code> (replaced %s)", history$version, format(history$archived_at, "%d %b %Y")),
-                 collapse = ", "), ". Their live readings are not on this chart."))
-}
-```
 
 ## 4.2 Backtest performance
 
@@ -468,8 +457,6 @@ callout("warn", "Read these before relying on the history",
     "so it is somewhat more flattering than a true real-time record.</li>",
     "<li><b>NBER dating lag ignored.</b> Outcomes count as known 12 months later; in reality NBER ",
     "dates turning points 6–12+ months after the fact.</li>",
-    "<li><b>GLM alone.</b> This is not TerraMetric-Atlas's headline, which blends the GLM with a ",
-    "hand-tuned prior.</li>",
     if (nrow(interp)) paste0("<li><b>Interpolated inputs.</b> ",
                              paste(sprintf("%s (%s)", format(interp$month, "%b %Y"), gsub(";", ", ", interp$interpolated)),
                                    collapse = "; "),
